@@ -30,6 +30,48 @@ library MathUtils {
     }
   }
 
+  /// @notice Calculates the interest accumulated using a compounded interest rate formula.
+  /// @dev Candidate A for aave/aave-v4#853. A three-term binomial approximation of
+  /// `e^(rate * t)`, the shape Aave V2 and V3 used for the variable debt index while
+  /// keeping the linear form for the liquidity index. Unlike the linear form this
+  /// composes: accruing over k sub-intervals gives the same index as accruing once
+  /// over their sum, so the frequency of accrual stops setting what borrowers owe.
+  /// @dev The approximation holds only for small `rate * t`. One 365-day step at a
+  /// 1000% rate gives 227 where `e^10` is 22026, so this rests on debt accruing far
+  /// more often than annually, as it did in V2 and V3.
+  /// @dev Products round down, understating the second and third terms rather than
+  /// overstating a term that raises debt.
+  /// @param rate The interest rate, expressed in RAY.
+  /// @param lastUpdateTimestamp The timestamp to calculate interest rate from.
+  /// @return The interest compounded during the time delta, expressed in RAY.
+  function calculateCompoundedInterest(
+    uint96 rate,
+    uint40 lastUpdateTimestamp
+  ) internal view returns (uint256) {
+    if (lastUpdateTimestamp > block.timestamp) {
+      revert();
+    }
+    uint256 exp = block.timestamp - lastUpdateTimestamp;
+    if (exp == 0) {
+      return RAY;
+    }
+
+    uint256 base = uint256(rate) / SECONDS_PER_YEAR;
+    uint256 basePowerTwo = (base * base) / RAY;
+    uint256 basePowerThree = (basePowerTwo * base) / RAY;
+
+    uint256 expMinusOne = exp - 1;
+    uint256 expMinusTwo = exp > 2 ? exp - 2 : 0;
+
+    return
+      RAY +
+      (base * exp) +
+      (exp * expMinusOne * basePowerTwo) /
+      2 +
+      (exp * expMinusOne * expMinusTwo * basePowerThree) /
+      6;
+  }
+
   /// @notice Returns the smaller of two unsigned integers.
   function min(uint256 a, uint256 b) internal pure returns (uint256 result) {
     assembly ('memory-safe') {
