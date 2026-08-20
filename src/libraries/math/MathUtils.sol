@@ -30,6 +30,42 @@ library MathUtils {
     }
   }
 
+  /// @dev Candidate B for aave/aave-v4#853. The period the debt index is allowed
+  /// to compound over. The issue's own mitigation family is to express the rate
+  /// on a coarser basis than per-second; quantising accrual to whole periods
+  /// reaches the same place without an on-chain root, because time inside a
+  /// period cannot be split into extra compounding steps.
+  uint256 internal constant COMPOUNDING_PERIOD = 7 days;
+
+  /// @notice The number of whole compounding periods between a timestamp and now.
+  /// @dev Reverts if `lastUpdateTimestamp` is greater than `block.timestamp`.
+  function wholePeriodsElapsed(uint40 lastUpdateTimestamp) internal view returns (uint256) {
+    if (lastUpdateTimestamp > block.timestamp) {
+      revert();
+    }
+    return (block.timestamp - lastUpdateTimestamp) / COMPOUNDING_PERIOD;
+  }
+
+  /// @notice Linear interest over whole compounding periods only.
+  /// @dev Candidate B for aave/aave-v4#853. Interest for the part-period since
+  /// the last boundary is not dropped: it is left for the next accrual to pick
+  /// up, because the caller advances `lastUpdateTimestamp` by whole periods
+  /// rather than to `block.timestamp`. Accruing a thousand times inside one
+  /// period therefore produces the same index as accruing once at its end.
+  /// @param rate The interest rate, expressed in RAY.
+  /// @param lastUpdateTimestamp The timestamp to calculate interest rate from.
+  /// @return The interest accumulated over the whole periods elapsed, in RAY.
+  function calculateQuantisedLinearInterest(
+    uint96 rate,
+    uint40 lastUpdateTimestamp
+  ) internal view returns (uint256) {
+    uint256 periods = wholePeriodsElapsed(lastUpdateTimestamp);
+    if (periods == 0) {
+      return RAY;
+    }
+    return RAY + (uint256(rate) * periods * COMPOUNDING_PERIOD) / SECONDS_PER_YEAR;
+  }
+
   /// @notice Returns the smaller of two unsigned integers.
   function min(uint256 a, uint256 b) internal pure returns (uint256 result) {
     assembly ('memory-safe') {
