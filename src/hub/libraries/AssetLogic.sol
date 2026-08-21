@@ -146,7 +146,15 @@ library AssetLogic {
     uint256 drawnIndex = asset.getDrawnIndex();
     asset.realizedFees += asset.getUnrealizedFees(drawnIndex).toUint120();
     asset.drawnIndex = drawnIndex.toUint120();
-    asset.lastUpdateTimestamp = block.timestamp.toUint40();
+    // Candidate B for aave/aave-v4#853: advance by whole compounding periods
+    // only. The part-period remainder stays on the clock for the next accrual,
+    // so triggering accrual more often cannot buy extra compounding steps.
+    uint256 periods = MathUtils.wholePeriodsElapsed(asset.lastUpdateTimestamp);
+    if (periods != 0) {
+      asset.lastUpdateTimestamp = (asset.lastUpdateTimestamp +
+        periods *
+        MathUtils.COMPOUNDING_PERIOD).toUint40();
+    }
   }
 
   /// @notice Calculates the drawn index of a specified asset based on the existing drawn rate and index.
@@ -160,7 +168,7 @@ library AssetLogic {
     }
     return
       previousIndex.rayMulUp(
-        MathUtils.calculateLinearInterest(asset.drawnRate, lastUpdateTimestamp)
+        MathUtils.calculateQuantisedLinearInterest(asset.drawnRate, lastUpdateTimestamp)
       );
   }
 
