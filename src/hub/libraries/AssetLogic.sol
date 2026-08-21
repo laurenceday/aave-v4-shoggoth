@@ -160,7 +160,7 @@ library AssetLogic {
     }
     return
       previousIndex.rayMulUp(
-        MathUtils.calculateLinearInterest(asset.drawnRate, lastUpdateTimestamp)
+        MathUtils.calculateCompoundedInterest(asset.drawnRate, lastUpdateTimestamp)
       );
   }
 
